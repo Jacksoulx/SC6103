@@ -1,0 +1,29 @@
+# Compiled Java class files
+bin/
+*.class
+
+# Compiled C executable
+client/client_udp.exe
+client/*.o
+client/*.obj
+
+# IDE files
+.vscode/
+.idea/
+*.iml
+.DS_Store
+
+# Windows
+Thumbs.db
+desktop.ini
+
+# Temporary files
+*.tmp
+*.log
+*.swp
+*~
+
+# Build artifacts
+*.jar
+*.war
+*.ear

@@ -1,0 +1,171 @@
+Distributed Facility Booking System (UDP)
+==========================================
+
+Project Type: Heterogeneous UDP RPC System
+Server: Java
+Client: C
+Protocol: Manual binary marshalling (network byte order)
+
+Directory Structure:
+-------------------
+/SC6103_project
+├── README.md                    # Main project documentation
+├── HETEROGENEOUS.md             # Cross-language implementation details
+│
+├── /common/                     # Java protocol definitions (3 files)
+│   ├── Protocol.java            # Op codes, constants
+│   ├── Types.java               # Data types (Facility, Booking, Interval)
+│   └── WireCodec.java           # Binary marshalling/unmarshalling (ByteBuffer)
+│
+├── /server/                     # Java server (5 files)
+│   ├── ServerMain.java          # UDP server main loop
+│   ├── RequestRouter.java       # Request routing + at-most-once cache
+│   ├── ReservationLogic.java    # Business logic (booking, conflict detection, reset)
+│   ├── FacilityStore.java       # In-memory storage (facilities and bookings)
+│   └── MonitorRegistry.java     # Monitor callback registry
+│
+├── /client/                     # C client (6 files)
+│   ├── client_main.c            # UDP client + command-line interface
+│   ├── protocol.h               # Op codes (mirrors Java)
+│   ├── wire_codec.h             # Marshalling interface declarations
+│   ├── wire_codec.c             # Marshalling implementation (htons/htonl byte order)
+│   ├── Makefile                 # Build script
+│   └── client_udp.exe           # Compiled executable
+│
+├── /scripts/                    # Run scripts (3 files)
+│   ├── run_server.bat           # Start Java server
+│   ├── build_c_client.bat       # Build C client
+│   └── run_c_client.bat         # Run C client
+│
+└── /bin/                        # Java compiled output (.class files)
+
+File Statistics:
+---------------
+- Java source files: 8
+- C source files: 5
+- Batch scripts: 3
+- Documentation: 2
+- Total: 18 source files
+
+Code Size:
+---------
+- Java server: ~1500 lines
+- C client: ~850 lines
+- Total: ~2350 lines
+
+Core Features:
+-------------
+1. Query Facility Availability (QUERY_AVAIL)
+   - Query available time slots for a specific date
+   - Idempotent operation
+
+2. Book Facility (BOOK)
+   - Book facility for specified time range
+   - Returns booking ID
+   - Triggers monitor callbacks (if registered)
+
+3. Change Booking (CHANGE_BOOKING)
+   - Modify booking time by offset in minutes
+   - Validates no conflicts before updating
+   - Triggers monitor callbacks (if registered)
+
+4. Monitor Callbacks (MONITOR)
+   - Register for facility change notifications
+   - Server pushes UDP callbacks to client
+   - Client listens on specified port for notifications
+
+5. Custom Idempotent Operation (CUSTOM_IDEMPOTENT)
+   - Reset facility schedule (clear all bookings for specified day)
+   - Returns count of removed bookings
+   - Repeated calls yield same result (idempotent)
+   - Use case: Daily/weekly schedule reset
+
+6. Custom Non-Idempotent Operation (CUSTOM_NON_IDEMPOTENT)
+   - Increment facility usage counter
+   - Returns new counter value
+   - Each call changes state (non-idempotent)
+   - Use case: Access frequency tracking, audit logging
+
+Technical Features:
+------------------
+- UDP socket communication (no TCP)
+- Manual binary marshalling (no Java serialization)
+- Network byte order (big-endian)
+- At-least-once semantics (client retry mechanism)
+- At-most-once semantics (server request deduplication)
+- Packet loss simulation and recovery testing
+- Cross-language compatibility verification (Java ↔ C)
+- Dynamic facility creation (auto-created on first use)
+- All code comments in English (international collaboration)
+
+Quick Start:
+-----------
+1. Compile server: 
+   javac -d bin common\*.java server\*.java
+
+2. Compile client: 
+   scripts\build_c_client.bat
+
+3. Start server: 
+   java -cp bin ServerMain --port 9999
+
+4. Run client examples:
+   # Query availability
+   scripts\run_c_client.bat query --facility LabA --date 2025-10-10
+   
+   # Book facility
+   scripts\run_c_client.bat book --facility LabA --user alice --start 1728540000000 --end 1728543600000
+   
+   # Change booking
+   scripts\run_c_client.bat change --booking-id 1 --offset 60
+   
+   # Monitor facility (requires separate terminal)
+   scripts\run_c_client.bat monitor --facility LabA --duration 60 --callback-port 10000
+   
+   # Reset schedule (idempotent)
+   scripts\run_c_client.bat reset --facility LabA --day-start 1728518400000 --day-end 1728604800000
+   
+   # Usage counter (non-idempotent)
+   scripts\run_c_client.bat custom-incr --facility LabA
+
+Dependencies:
+------------
+- JDK 8+ (installed: OpenJDK 25)
+- GCC/MinGW (installed: TDM64 10.3.0)
+- Windows operating system
+
+Protocol Specification:
+----------------------
+Message Header (16 bytes, big-endian):
+  0-1:   uint16 version (=1)
+  2-3:   uint16 opCode
+  4-7:   uint32 requestId
+  8-11:  uint32 flags (bit0: atMostOnce; bit1: isCallback)
+  12-15: uint32 payloadLength
+
+String encoding: uint16 length + UTF-8 bytes
+Timestamps: int64 epoch milliseconds (8 bytes, big-endian)
+
+Op Codes:
+  0x0001 - QUERY_AVAIL (query availability)
+  0x0002 - BOOK (book facility)
+  0x0003 - CHANGE_BOOKING (change booking)
+  0x0004 - MONITOR (monitor callbacks)
+  0x1001 - CUSTOM_IDEMPOTENT (custom idempotent operation)
+  0x1002 - CUSTOM_NON_IDEMPOTENT (custom non-idempotent operation)
+  0x8000 - Error flag mask
+
+Status: ✅ Completed and tested
+
+Test Coverage:
+-------------
+✅ Query facility availability
+✅ Book facility
+✅ Change booking time
+✅ Monitor callback mechanism
+✅ Reset schedule (idempotent operation verification)
+✅ Usage counter (non-idempotent operation verification)
+✅ At-least-once semantics testing
+✅ At-most-once semantics testing
+✅ Cross-language communication verification (Java ↔ C)
+✅ Packet loss recovery testing
