@@ -9,6 +9,7 @@
 
 #include "wire_codec.h"
 #include <string.h>
+#include <stdio.h>
 
 /* Platform-specific network byte order headers */
 #ifdef _WIN32
@@ -111,3 +112,35 @@ int read_string(const uint8_t *buf, char *out, size_t max_len) {
     offset += len;                                       /* advance by string length */
     return offset;                                       /* total bytes read */
 }
+
+/* Write WeeklyTime as: uint8 day + uint8 hour + uint8 minute (3 bytes total) */
+int write_weekly_time(uint8_t *buf, const WeeklyTime *time) {
+    buf[0] = (uint8_t)time->day;                         /* day as uint8 (0-6) */
+    buf[1] = time->hour;                                 /* hour as uint8 (0-23) */
+    buf[2] = time->minute;                               /* minute as uint8 (0-59) */
+    return 3;                                            /* bytes written */
+}
+
+/* Read WeeklyTime from: uint8 day + uint8 hour + uint8 minute (3 bytes total) */
+int read_weekly_time(const uint8_t *buf, WeeklyTime *time) {
+    time->day = (Day)buf[0];                             /* read day (0-6) */
+    time->hour = buf[1];                                 /* read hour (0-23) */
+    time->minute = buf[2];                               /* read minute (0-59) */
+    return 3;                                            /* bytes read */
+}
+
+/* Helper: get day name from Day enum */
+const char* day_to_string(Day day) {
+    switch (day) {
+        case DAY_MONDAY: return "Monday";
+        case DAY_TUESDAY: return "Tuesday";
+        case DAY_WEDNESDAY: return "Wednesday";
+        case DAY_THURSDAY: return "Thursday";
+        case DAY_FRIDAY: return "Friday";
+        case DAY_SATURDAY: return "Saturday";
+        case DAY_SUNDAY: return "Sunday";
+        default: return "Unknown";
+    }
+}
+
+

@@ -2,14 +2,24 @@
 rem Build C client using MinGW gcc on Windows
 rem Requires MinGW or similar toolchain in PATH
 setlocal
-set SRC=e:\SC6103_project\client
+set SRC=c:\Users\wangx\OneDrive\Desktop\ds\SC6103\client
 pushd %SRC%
 
+rem Try to find gcc in common locations
+set GCC_PATH=
+if exist "C:\TDM-GCC-64\bin\gcc.exe" set GCC_PATH=C:\TDM-GCC-64\bin\
+if exist "C:\MinGW\bin\gcc.exe" set GCC_PATH=C:\MinGW\bin\
+if exist "C:\msys64\mingw64\bin\gcc.exe" set GCC_PATH=C:\msys64\mingw64\bin\
+
 rem Compile C sources
-gcc -Wall -Wextra -std=c11 -O2 -o client_udp.exe client_main.c wire_codec.c -lws2_32
+if defined GCC_PATH (
+    "%GCC_PATH%gcc" -Wall -Wno-unknown-pragmas -std=c99 -O2 -o client_udp.exe client_main.c wire_codec.c -lws2_32
+) else (
+    gcc -Wall -Wno-unknown-pragmas -std=c99 -O2 -o client_udp.exe client_main.c wire_codec.c -lws2_32
+)
 
 if errorlevel 1 (
-    echo Build failed
+    echo Build failed - Make sure MinGW or GCC is installed and in PATH
     popd
     exit /b 1
 )

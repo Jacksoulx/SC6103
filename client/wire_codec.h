@@ -76,4 +76,28 @@ int write_string(uint8_t *buf, const char *str);
  */
 int read_string(const uint8_t *buf, char *out, size_t max_len);
 
+/*
+ * Write WeeklyTime as: uint8 day + uint8 hour + uint8 minute (3 bytes total).
+ * Returns number of bytes written (3).
+ */
+int write_weekly_time(uint8_t *buf, const WeeklyTime *time);
+
+/*
+ * Read WeeklyTime from: uint8 day + uint8 hour + uint8 minute (3 bytes total).
+ * Returns number of bytes read (3).
+ */
+int read_weekly_time(const uint8_t *buf, WeeklyTime *time);
+
+/*
+ * Helper: convert WeeklyTime to string for display.
+ * Returns pointer to static buffer (not thread-safe).
+ */
+
+
+/*
+ * Helper: get day name from Day enum.
+ * Returns pointer to static string.
+ */
+const char* day_to_string(Day day);
+
 #endif /* WIRE_CODEC_H */

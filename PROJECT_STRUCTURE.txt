@@ -1,10 +1,11 @@
 Distributed Facility Booking System (UDP)
 ==========================================
 
-Project Type: Heterogeneous UDP RPC System
-Server: Java
-Client: C
+Project Type: Heterogeneous UDP RPC System with Weekly Scheduling
+Server: Java (DatagramSocket + manual marshalling)
+Client: C (Winsock2 + manual marshalling)
 Protocol: Manual binary marshalling (network byte order)
+Schedule Format: Weekly recurring (Day/Hour/Minute)
 
 Directory Structure:
 -------------------
@@ -14,8 +15,8 @@ Directory Structure:
 │
 ├── /common/                     # Java protocol definitions (3 files)
 │   ├── Protocol.java            # Op codes, constants
-│   ├── Types.java               # Data types (Facility, Booking, Interval)
-│   └── WireCodec.java           # Binary marshalling/unmarshalling (ByteBuffer)
+│   ├── Types.java               # Data types (Day enum, WeeklyTime, Booking, Interval)
+│   └── WireCodec.java           # Binary marshalling/unmarshalling (ByteBuffer + WeeklyTime)
 │
 ├── /server/                     # Java server (5 files)
 │   ├── ServerMain.java          # UDP server main loop
@@ -25,10 +26,10 @@ Directory Structure:
 │   └── MonitorRegistry.java     # Monitor callback registry
 │
 ├── /client/                     # C client (6 files)
-│   ├── client_main.c            # UDP client + command-line interface
-│   ├── protocol.h               # Op codes (mirrors Java)
+│   ├── client_main.c            # UDP client + command-line interface (weekly schedule)
+│   ├── protocol.h               # Op codes + Day enum + WeeklyTime struct (mirrors Java)
 │   ├── wire_codec.h             # Marshalling interface declarations
-│   ├── wire_codec.c             # Marshalling implementation (htons/htonl byte order)
+│   ├── wire_codec.c             # Marshalling implementation (htons/htonl + WeeklyTime)
 │   ├── Makefile                 # Build script
 │   └── client_udp.exe           # Compiled executable
 │
@@ -41,48 +42,57 @@ Directory Structure:
 
 File Statistics:
 ---------------
-- Java source files: 8
-- C source files: 5
+- Java source files: 8 (optimized imports)
+- C source files: 5 (removed unused functions)
 - Batch scripts: 3
-- Documentation: 2
-- Total: 18 source files
+- Documentation: 5 (cleaned and updated)
+- Total: 21 files
 
-Code Size:
----------
-- Java server: ~1500 lines
-- C client: ~850 lines
-- Total: ~2350 lines
+Code Quality:
+-----------
+- ✅ Optimized imports (no wildcard imports)
+- ✅ Removed unused code and functions
+- ✅ Removed outdated documentation
+- ✅ Clean file structure with no temporary files
 
 Core Features:
 -------------
-1. Query Facility Availability (QUERY_AVAIL)
-   - Query available time slots for a specific date
+1. Query Day Availability (QUERY_AVAIL)
+   - Query available time slots for a specific day of week
+   - Request: facility name + day (Monday-Sunday)
+   - Response: list of available WeeklyTime intervals
    - Idempotent operation
 
 2. Book Facility (BOOK)
-   - Book facility for specified time range
-   - Returns booking ID
+   - Book facility using weekly schedule format
+   - Request: facility + user + start WeeklyTime + end WeeklyTime
+   - Response: booking ID
    - Triggers monitor callbacks (if registered)
 
 3. Change Booking (CHANGE_BOOKING)
    - Modify booking time by offset in minutes
+   - Request: booking ID + offset (can be negative)
+   - Response: new start/end WeeklyTime
    - Validates no conflicts before updating
    - Triggers monitor callbacks (if registered)
 
 4. Monitor Callbacks (MONITOR)
    - Register for facility change notifications
-   - Server pushes UDP callbacks to client
+   - Request: facility + duration + callback port
+   - Server pushes UDP callbacks to client with day-specific updates
    - Client listens on specified port for notifications
 
 5. Custom Idempotent Operation (CUSTOM_IDEMPOTENT)
-   - Reset facility schedule (clear all bookings for specified day)
-   - Returns count of removed bookings
+   - Reset facility schedule for a specific day
+   - Request: facility name + day
+   - Response: count of removed bookings
    - Repeated calls yield same result (idempotent)
-   - Use case: Daily/weekly schedule reset
+   - Use case: Weekly schedule reset
 
 6. Custom Non-Idempotent Operation (CUSTOM_NON_IDEMPOTENT)
    - Increment facility usage counter
-   - Returns new counter value
+   - Request: facility name
+   - Response: new counter value
    - Each call changes state (non-idempotent)
    - Use case: Access frequency tracking, audit logging
 
@@ -109,12 +119,12 @@ Quick Start:
 3. Start server: 
    java -cp bin ServerMain --port 9999
 
-4. Run client examples:
-   # Query availability
-   scripts\run_c_client.bat query --facility LabA --date 2025-10-10
+4. Run client examples (weekly schedule format):
+   # Query day availability
+   scripts\run_c_client.bat query --facility LabA --day Monday
    
-   # Book facility
-   scripts\run_c_client.bat book --facility LabA --user alice --start 1728540000000 --end 1728543600000
+   # Book facility using weekly time
+   scripts\run_c_client.bat book --facility LabA --user alice --day Monday --start-hour 9 --start-minute 0 --end-hour 10 --end-minute 30
    
    # Change booking
    scripts\run_c_client.bat change --booking-id 1 --offset 60
@@ -122,11 +132,11 @@ Quick Start:
    # Monitor facility (requires separate terminal)
    scripts\run_c_client.bat monitor --facility LabA --duration 60 --callback-port 10000
    
-   # Reset schedule (idempotent)
-   scripts\run_c_client.bat reset --facility LabA --day-start 1728518400000 --day-end 1728604800000
+   # Reset day schedule (idempotent)
+   scripts\run_c_client.bat reset --facility LabA --day Monday
    
    # Usage counter (non-idempotent)
-   scripts\run_c_client.bat custom-incr --facility LabA
+   scripts\run_c_client.bat custom-incr --facility LabA --atMostOnce 1
 
 Dependencies:
 ------------
@@ -144,7 +154,8 @@ Message Header (16 bytes, big-endian):
   12-15: uint32 payloadLength
 
 String encoding: uint16 length + UTF-8 bytes
-Timestamps: int64 epoch milliseconds (8 bytes, big-endian)
+WeeklyTime: uint8 day (0-6) + uint8 hour (0-23) + uint8 minute (0-59) = 3 bytes total
+Day enum: Monday=0, Tuesday=1, Wednesday=2, Thursday=3, Friday=4, Saturday=5, Sunday=6
 
 Op Codes:
   0x0001 - QUERY_AVAIL (query availability)

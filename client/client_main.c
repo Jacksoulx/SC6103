@@ -15,11 +15,17 @@
 #include <string.h>
 #include <time.h>
 
+#ifdef _WIN32
+    #define strcasecmp _stricmp
+#endif
+
 /* Platform-specific socket headers */
 #ifdef _WIN32
     #include <winsock2.h>
     #include <ws2tcpip.h>
-    #pragma comment(lib, "ws2_32.lib")
+    #ifdef _MSC_VER
+        #pragma comment(lib, "ws2_32.lib")
+    #endif
     typedef int socklen_t;
     #define close closesocket
 #else
@@ -56,6 +62,20 @@ void init_request_id() {
  */
 uint32_t next_request_id() {
     return ++g_request_id;                               /* increment and return */
+}
+
+/*
+ * Parse day string to Day enum.
+ */
+Day parse_day(const char *day_str) {
+    if (strcasecmp(day_str, "monday") == 0) return DAY_MONDAY;
+    if (strcasecmp(day_str, "tuesday") == 0) return DAY_TUESDAY;
+    if (strcasecmp(day_str, "wednesday") == 0) return DAY_WEDNESDAY;
+    if (strcasecmp(day_str, "thursday") == 0) return DAY_THURSDAY;
+    if (strcasecmp(day_str, "friday") == 0) return DAY_FRIDAY;
+    if (strcasecmp(day_str, "saturday") == 0) return DAY_SATURDAY;
+    if (strcasecmp(day_str, "sunday") == 0) return DAY_SUNDAY;
+    return DAY_MONDAY; /* default to Monday */
 }
 
 /*
@@ -108,22 +128,16 @@ int udp_invoke(SOCKET sock, const struct sockaddr_in *server_addr,
 }
 
 /*
- * Command: query facility availability for a given day.
- * Usage: query --facility LabA --date 2025-10-10
+ * Command: query facility availability for a given day of the week.
+ * Usage: query --facility LabA --day Monday
  */
 void cmd_query(SOCKET sock, struct sockaddr_in *server_addr, const char *facility,
-               const char *date_str, int timeout_ms, int retries, int at_most_once) {
-    /* Parse date string (yyyy-MM-dd) to epoch milliseconds (simplified: assume start of day UTC) */
-    /* For demo, we use a fixed timestamp; production would parse date properly */
-    int64_t day_start = 1728518400000LL;                 /* example: 2024-10-10 00:00:00 UTC in ms */
-    int64_t day_end = day_start + 86400000LL;            /* +24 hours */
-
-    /* Build request payload: string facility + i64 dayStart + i64 dayEnd */
+               Day day, int timeout_ms, int retries, int at_most_once) {
+    /* Build request payload: string facility + uint8 day */
     uint8_t req_buf[MAX_DGRAM_SIZE];                     /* request buffer */
     int offset = HEADER_LEN;                             /* skip header, fill payload first */
     offset += write_string(req_buf + offset, facility);  /* write facility string */
-    offset += write_i64(req_buf + offset, day_start);    /* write day start timestamp */
-    offset += write_i64(req_buf + offset, day_end);      /* write day end timestamp */
+    req_buf[offset++] = (uint8_t)day;                    /* write day as uint8 */
     int payload_len = offset - HEADER_LEN;               /* compute payload length */
 
     /* Build header */
@@ -151,33 +165,40 @@ void cmd_query(SOCKET sock, struct sockaddr_in *server_addr, const char *facilit
         return;
     }
 
-    /* Parse intervals: uint16 count + [i64 start, i64 end]* */
+    /* Parse intervals: uint16 count + [WeeklyTime start, WeeklyTime end]* */
     int pos = HEADER_LEN;                                /* payload start */
     uint16_t count;                                      /* intervals count */
     pos += read_u16(resp_buf + pos, &count);             /* read count */
-    printf("Available intervals: %u\n", count);          /* print count */
+    printf("Available intervals for %s: %u\n", day_to_string(day), count); /* print count */
     for (int i = 0; i < count; i++) {                    /* loop intervals */
-        int64_t start, end;                              /* interval bounds */
-        pos += read_i64(resp_buf + pos, &start);         /* read start */
-        pos += read_i64(resp_buf + pos, &end);           /* read end */
-        printf("  [%lld, %lld]\n", (long long)start, (long long)end); /* print interval */
+        WeeklyTime start, end;                           /* interval bounds */
+        pos += read_weekly_time(resp_buf + pos, &start); /* read start time */
+        pos += read_weekly_time(resp_buf + pos, &end);   /* read end time */
+        
+        /* Format each time separately to avoid static buffer conflict */
+        char start_str[32], end_str[32];
+        snprintf(start_str, sizeof(start_str), "%s %02u:%02u", 
+                day_to_string(start.day), start.hour, start.minute);
+        snprintf(end_str, sizeof(end_str), "%s %02u:%02u", 
+                day_to_string(end.day), end.hour, end.minute);
+        printf("  %s - %s\n", start_str, end_str); /* print interval */
     }
 }
 
 /*
  * Command: book a facility.
- * Usage: book --facility LabA --user alice --start <ms> --end <ms>
+ * Usage: book --facility LabA --user alice --day Monday --start-hour 9 --start-minute 0 --end-hour 10 --end-minute 30
  */
 void cmd_book(SOCKET sock, struct sockaddr_in *server_addr, const char *facility,
-              const char *user, int64_t start_ms, int64_t end_ms,
+              const char *user, const WeeklyTime *start, const WeeklyTime *end,
               int timeout_ms, int retries, int at_most_once) {
-    /* Build request payload: str facility + str user + i64 start + i64 end */
+    /* Build request payload: str facility + str user + WeeklyTime start + WeeklyTime end */
     uint8_t req_buf[MAX_DGRAM_SIZE];                     /* request buffer */
     int offset = HEADER_LEN;                             /* skip header */
     offset += write_string(req_buf + offset, facility);  /* facility */
     offset += write_string(req_buf + offset, user);      /* user */
-    offset += write_i64(req_buf + offset, start_ms);     /* start timestamp */
-    offset += write_i64(req_buf + offset, end_ms);       /* end timestamp */
+    offset += write_weekly_time(req_buf + offset, start); /* start time */
+    offset += write_weekly_time(req_buf + offset, end);   /* end time */
     int payload_len = offset - HEADER_LEN;               /* payload length */
 
     /* Build header */
@@ -206,7 +227,16 @@ void cmd_book(SOCKET sock, struct sockaddr_in *server_addr, const char *facility
     }
     int64_t booking_id;                                  /* booking id */
     read_i64(resp_buf + HEADER_LEN, &booking_id);        /* read id */
-    printf("Booking created: id=%lld\n", (long long)booking_id); /* print result */
+    
+    /* Format times separately to avoid static buffer conflict */
+    char start_str[32], end_str[32];
+    snprintf(start_str, sizeof(start_str), "%s %02u:%02u", 
+            day_to_string(start->day), start->hour, start->minute);
+    snprintf(end_str, sizeof(end_str), "%s %02u:%02u", 
+            day_to_string(end->day), end->hour, end->minute);
+    
+    printf("Booking created: id=%lld for %s from %s to %s\n", 
+           (long long)booking_id, facility, start_str, end_str); /* print result */
 }
 
 /*
@@ -282,17 +312,25 @@ void cmd_change(SOCKET sock, struct sockaddr_in *server_addr, int64_t booking_id
         return;
     }
 
-    /* Parse response: i64 start + i64 end */
+    /* Parse response: WeeklyTime start + WeeklyTime end */
     Header resp_hdr;                                     /* response header */
     read_header(resp_buf, &resp_hdr);                    /* read header */
     if (resp_hdr.opCode & OP_ERROR_MASK) {               /* check error */
         fprintf(stderr, "Server error response\n");      /* error */
         return;
     }
-    int64_t new_start, new_end;                          /* new time range */
-    read_i64(resp_buf + HEADER_LEN, &new_start);         /* read start */
-    read_i64(resp_buf + HEADER_LEN + 8, &new_end);       /* read end */
-    printf("Booking changed: new time [%lld, %lld]\n", (long long)new_start, (long long)new_end); /* print result */
+    WeeklyTime new_start, new_end;                       /* new time range */
+    read_weekly_time(resp_buf + HEADER_LEN, &new_start); /* read start */
+    read_weekly_time(resp_buf + HEADER_LEN + 3, &new_end); /* read end */
+    
+    /* Format times separately to avoid static buffer conflict */
+    char start_str[32], end_str[32];
+    snprintf(start_str, sizeof(start_str), "%s %02u:%02u", 
+            day_to_string(new_start.day), new_start.hour, new_start.minute);
+    snprintf(end_str, sizeof(end_str), "%s %02u:%02u", 
+            day_to_string(new_end.day), new_end.hour, new_end.minute);
+    
+    printf("Booking changed: new time %s to %s\n", start_str, end_str); /* print result */
 }
 
 /*
@@ -390,16 +428,23 @@ void cmd_monitor(SOCKET sock, struct sockaddr_in *server_addr, const char *facil
             if (cb_hdr.opCode == OP_QUERY_AVAIL) {
                 uint16_t count;                          /* interval count */
                 read_u16(callback_buf + HEADER_LEN, &count); /* read count */
-                printf("Facility availability updated: %u intervals\n", count);
+                Day day = (Day)callback_buf[HEADER_LEN + 2]; /* read day */
+                printf("Facility availability updated for %s: %u intervals\n", 
+                       day_to_string(day), count);
                 
-                int offset_cb = HEADER_LEN + 2;         /* start after count */
+                int offset_cb = HEADER_LEN + 3;         /* start after count + day */
                 for (int i = 0; i < count; i++) {
-                    int64_t start, end;                  /* interval */
-                    read_i64(callback_buf + offset_cb, &start);
-                    offset_cb += 8;
-                    read_i64(callback_buf + offset_cb, &end);
-                    offset_cb += 8;
-                    printf("  [%lld, %lld]\n", (long long)start, (long long)end);
+                    WeeklyTime start, end;               /* interval */
+                    offset_cb += read_weekly_time(callback_buf + offset_cb, &start);
+                    offset_cb += read_weekly_time(callback_buf + offset_cb, &end);
+                    
+                    /* Format times separately to avoid static buffer conflict */
+                    char start_str[32], end_str[32];
+                    snprintf(start_str, sizeof(start_str), "%s %02u:%02u", 
+                            day_to_string(start.day), start.hour, start.minute);
+                    snprintf(end_str, sizeof(end_str), "%s %02u:%02u", 
+                            day_to_string(end.day), end.hour, end.minute);
+                    printf("  %s - %s\n", start_str, end_str);
                 }
             }
             printf("========================\n");
@@ -413,18 +458,15 @@ void cmd_monitor(SOCKET sock, struct sockaddr_in *server_addr, const char *facil
 
 /*
  * Command: reset facility schedule for a specific day (idempotent custom op).
- * Usage: reset --facility LabA --day-start 1728518400000 --day-end 1728604800000
+ * Usage: reset --facility LabA --day Monday
  */
 void cmd_reset(SOCKET sock, struct sockaddr_in *server_addr, const char *facility,
-               int64_t day_start, int64_t day_end, int timeout_ms, int retries, int at_most_once) {
-    /* Build request payload: str facility + i64 dayStart + i64 dayEnd */
+               Day day, int timeout_ms, int retries, int at_most_once) {
+    /* Build request payload: str facility + uint8 day */
     uint8_t req_buf[MAX_DGRAM_SIZE];                     /* request buffer */
     int offset = HEADER_LEN;                             /* skip header */
     offset += write_string(req_buf + offset, facility);  /* facility */
-    write_i64(req_buf + offset, day_start);              /* day start */
-    offset += 8;                                         /* advance */
-    write_i64(req_buf + offset, day_end);                /* day end */
-    offset += 8;                                         /* advance */
+    req_buf[offset++] = (uint8_t)day;                    /* day as uint8 */
     int payload_len = offset - HEADER_LEN;               /* payload length */
 
     /* Build header */
@@ -453,7 +495,8 @@ void cmd_reset(SOCKET sock, struct sockaddr_in *server_addr, const char *facilit
     }
     uint32_t removed_count;                              /* removed bookings count */
     read_u32(resp_buf + HEADER_LEN, &removed_count);     /* read count */
-    printf("Schedule reset for facility=%s: %u booking(s) removed\n", facility, removed_count); /* print result */
+    printf("Schedule reset for facility=%s on %s: %u booking(s) removed\n", 
+           facility, day_to_string(day), removed_count); /* print result */
 }
 
 /*
@@ -474,11 +517,9 @@ int main(int argc, char *argv[]) {
     int at_most_once = 0;                                /* at-most-once flag */
     const char *facility = "LabA";                       /* facility name */
     const char *user = "alice";                          /* user name */
-    const char *date_str = "2025-10-10";                 /* date string */
-    int64_t start_ms = 1728540000000LL;                  /* example start timestamp */
-    int64_t end_ms = 1728543600000LL;                    /* example end timestamp */
-    int64_t day_start = 1728518400000LL;                 /* day start for reset (00:00) */
-    int64_t day_end = 1728604800000LL;                   /* day end for reset (24:00) */
+    Day day = DAY_MONDAY;                                /* default day */
+    WeeklyTime start_time = {DAY_MONDAY, 9, 0};          /* default start: Monday 09:00 */
+    WeeklyTime end_time = {DAY_MONDAY, 10, 30};          /* default end: Monday 10:30 */
     int64_t booking_id = 1;                              /* booking id for change */
     int offset_minutes = 60;                             /* offset minutes for change */
     uint32_t duration_seconds = 30;                      /* monitor duration */
@@ -494,16 +535,18 @@ int main(int argc, char *argv[]) {
             facility = argv[++i];                        /* set facility */
         } else if (strcmp(argv[i], "--user") == 0 && i + 1 < argc) {
             user = argv[++i];                            /* set user */
-        } else if (strcmp(argv[i], "--date") == 0 && i + 1 < argc) {
-            date_str = argv[++i];                        /* set date */
-        } else if (strcmp(argv[i], "--start") == 0 && i + 1 < argc) {
-            start_ms = atoll(argv[++i]);                 /* set start ms */
-        } else if (strcmp(argv[i], "--end") == 0 && i + 1 < argc) {
-            end_ms = atoll(argv[++i]);                   /* set end ms */
-        } else if (strcmp(argv[i], "--day-start") == 0 && i + 1 < argc) {
-            day_start = atoll(argv[++i]);                /* set day start */
-        } else if (strcmp(argv[i], "--day-end") == 0 && i + 1 < argc) {
-            day_end = atoll(argv[++i]);                  /* set day end */
+        } else if (strcmp(argv[i], "--day") == 0 && i + 1 < argc) {
+            day = parse_day(argv[++i]);                  /* set day */
+            start_time.day = day;                        /* update start day */
+            end_time.day = day;                          /* update end day */
+        } else if (strcmp(argv[i], "--start-hour") == 0 && i + 1 < argc) {
+            start_time.hour = (uint8_t)atoi(argv[++i]);  /* set start hour */
+        } else if (strcmp(argv[i], "--start-minute") == 0 && i + 1 < argc) {
+            start_time.minute = (uint8_t)atoi(argv[++i]); /* set start minute */
+        } else if (strcmp(argv[i], "--end-hour") == 0 && i + 1 < argc) {
+            end_time.hour = (uint8_t)atoi(argv[++i]);    /* set end hour */
+        } else if (strcmp(argv[i], "--end-minute") == 0 && i + 1 < argc) {
+            end_time.minute = (uint8_t)atoi(argv[++i]);  /* set end minute */
         } else if (strcmp(argv[i], "--booking-id") == 0 && i + 1 < argc) {
             booking_id = atoll(argv[++i]);               /* set booking id */
         } else if (strcmp(argv[i], "--offset") == 0 && i + 1 < argc) {
@@ -559,15 +602,15 @@ int main(int argc, char *argv[]) {
 
     /* Dispatch command */
     if (strcmp(cmd, "query") == 0) {
-        cmd_query(sock, &server_addr, facility, date_str, timeout_ms, retries, at_most_once);
+        cmd_query(sock, &server_addr, facility, day, timeout_ms, retries, at_most_once);
     } else if (strcmp(cmd, "book") == 0) {
-        cmd_book(sock, &server_addr, facility, user, start_ms, end_ms, timeout_ms, retries, at_most_once);
+        cmd_book(sock, &server_addr, facility, user, &start_time, &end_time, timeout_ms, retries, at_most_once);
     } else if (strcmp(cmd, "change") == 0) {
         cmd_change(sock, &server_addr, booking_id, offset_minutes, timeout_ms, retries, at_most_once);
     } else if (strcmp(cmd, "monitor") == 0) {
         cmd_monitor(sock, &server_addr, facility, duration_seconds, callback_port, timeout_ms, retries, at_most_once);
     } else if (strcmp(cmd, "reset") == 0) {
-        cmd_reset(sock, &server_addr, facility, day_start, day_end, timeout_ms, retries, at_most_once);
+        cmd_reset(sock, &server_addr, facility, day, timeout_ms, retries, at_most_once);
     } else if (strcmp(cmd, "custom-incr") == 0) {
         cmd_custom_incr(sock, &server_addr, facility, timeout_ms, retries, at_most_once);
     } else {

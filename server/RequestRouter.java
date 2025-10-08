@@ -9,12 +9,14 @@
 
 import java.net.*;
 import java.nio.*;
-import java.util.*;
+import java.util.Map;
+import java.util.HashMap;
+import java.util.List;
 
 public class RequestRouter {
     private final ReservationLogic logic;            // business logic
     private final MonitorRegistry monitors;          // registry for callbacks
-    private final Random rnd = new Random();         // used for loss simulation in server
+
 
     // Simple at-most-once cache entry
     private static final class CacheEntry {
@@ -100,35 +102,35 @@ public class RequestRouter {
 
     // Helpers: parse a date (ms) or truncate to day as needed are kept external to router for simplicity (client will send ms).
 
-    // onQuery: req payload = string facility + i64 dayStart + i64 dayEnd; resp = u16 count + [i64 start,i64 end]*
+    // onQuery: req payload = string facility + uint8 day; resp = u16 count + [WeeklyTime start,WeeklyTime end]*
     private byte[] onQuery(InetAddress addr, int port, WireCodec.Header reqHdr, byte[] payload) {
         ByteBuffer in = WireCodec.wrap(payload);                   // wrap payload
         String facility = WireCodec.readString(in);                // read facility
-        long dayStart = WireCodec.readI64(in);                     // read day start
-        long dayEnd = WireCodec.readI64(in);                       // read day end
-        List<Types.Interval> ivals = logic.queryDay(facility, dayStart, dayEnd); // business call
+        int dayValue = Byte.toUnsignedInt(in.get());               // read day (0-6)
+        Types.Day day = Types.Day.fromValue(dayValue);             // convert to enum
+        List<Types.Interval> ivals = logic.queryDay(facility, day); // business call
 
         int count = ivals.size();                                  // number of intervals
-        int payloadLen = 2 + count * 16;                           // u16 count + each has 2x i64
+        int payloadLen = 2 + count * 6;                            // u16 count + each has 2x WeeklyTime (3 bytes each)
         ByteBuffer out = WireCodec.newMessageBuffer(payloadLen);   // allocate
         WireCodec.Header h = new WireCodec.Header();               // header
         h.version = Protocol.VERSION; h.opCode = reqHdr.opCode; h.requestId = reqHdr.requestId; h.flags = reqHdr.flags; h.payloadLen = payloadLen; // fill
         WireCodec.writeHeader(out, h);                             // write header
         WireCodec.writeU16(out, count);                            // write count
         for (Types.Interval iv : ivals) {                          // for each interval
-            WireCodec.writeI64(out, iv.startEpochMs);              // write start
-            WireCodec.writeI64(out, iv.endEpochMs);                // write end
+            WireCodec.writeWeeklyTime(out, iv.start);              // write start time
+            WireCodec.writeWeeklyTime(out, iv.end);                // write end time
         }
         return out.array();                                        // return buffer bytes
     }
 
-    // onBook: req payload = str facility + str user + i64 start + i64 end; resp = i64 bookingId
+    // onBook: req payload = str facility + str user + WeeklyTime start + WeeklyTime end; resp = i64 bookingId
     private byte[] onBook(InetAddress addr, int port, WireCodec.Header reqHdr, byte[] payload) throws ReservationLogic.ConflictException {
         ByteBuffer in = WireCodec.wrap(payload);                   // wrap
         String facility = WireCodec.readString(in);                // facility
         String user = WireCodec.readString(in);                    // user
-        long start = WireCodec.readI64(in);                        // start ms
-        long end = WireCodec.readI64(in);                          // end ms
+        Types.WeeklyTime start = WireCodec.readWeeklyTime(in);     // start time
+        Types.WeeklyTime end = WireCodec.readWeeklyTime(in);       // end time
         long id = logic.book(facility, user, start, end);          // attempt booking
         ByteBuffer out = WireCodec.newMessageBuffer(8);            // payload length 8 for i64
         WireCodec.Header h = new WireCodec.Header();               // header
@@ -139,18 +141,18 @@ public class RequestRouter {
         return out.array();                                        // return response bytes
     }
 
-    // onChange: req payload = i64 bookingId + i32 offsetMinutes; resp = i64 start + i64 end
+    // onChange: req payload = i64 bookingId + i32 offsetMinutes; resp = WeeklyTime start + WeeklyTime end
     private byte[] onChange(InetAddress addr, int port, WireCodec.Header reqHdr, byte[] payload) throws ReservationLogic.NotFoundException, ReservationLogic.ConflictException {
         ByteBuffer in = WireCodec.wrap(payload);                   // wrap
         long bookingId = WireCodec.readI64(in);                    // id
         int offsetMinutes = (int) WireCodec.readU32(in);           // read as uint32 -> int
         Types.Interval updated = logic.change(bookingId, offsetMinutes); // apply change
-        ByteBuffer out = WireCodec.newMessageBuffer(16);           // two i64 values
+        ByteBuffer out = WireCodec.newMessageBuffer(6);            // two WeeklyTime values (3 bytes each)
         WireCodec.Header h = new WireCodec.Header();               // header
-        h.version = Protocol.VERSION; h.opCode = reqHdr.opCode; h.requestId = reqHdr.requestId; h.flags = reqHdr.flags; h.payloadLen = 16; // fill
+        h.version = Protocol.VERSION; h.opCode = reqHdr.opCode; h.requestId = reqHdr.requestId; h.flags = reqHdr.flags; h.payloadLen = 6; // fill
         WireCodec.writeHeader(out, h);                             // write
-        WireCodec.writeI64(out, updated.startEpochMs);             // start
-        WireCodec.writeI64(out, updated.endEpochMs);               // end
+        WireCodec.writeWeeklyTime(out, updated.start);             // start time
+        WireCodec.writeWeeklyTime(out, updated.end);               // end time
         return out.array();                                        // bytes
     }
 
@@ -173,9 +175,9 @@ public class RequestRouter {
     private byte[] onCustomIdem(InetAddress addr, int port, WireCodec.Header reqHdr, byte[] payload) {
         ByteBuffer in = WireCodec.wrap(payload);                   // wrap
         String facility = WireCodec.readString(in);                // facility name
-        long dayStart = WireCodec.readI64(in);                     // day start timestamp
-        long dayEnd = WireCodec.readI64(in);                       // day end timestamp
-        int removedCount = logic.resetDaySchedule(facility, dayStart, dayEnd); // reset schedule (idempotent)
+        int dayValue = Byte.toUnsignedInt(in.get());               // read day (0-6)
+        Types.Day day = Types.Day.fromValue(dayValue);             // convert to enum
+        int removedCount = logic.resetDaySchedule(facility, day);  // reset schedule (idempotent)
         ByteBuffer out = WireCodec.newMessageBuffer(4);            // u32 for removed count
         WireCodec.Header h = new WireCodec.Header();               // header
         h.version = Protocol.VERSION; h.opCode = reqHdr.opCode; h.requestId = reqHdr.requestId; h.flags = reqHdr.flags; h.payloadLen = 4; // fill

@@ -1,170 +1,203 @@
-# Distributed Facility Booking System (UDP)
+# Distributed Facility Booking System (UDP) - Weekly Schedule
 
-This project implements a UDP-based client/server system with manual binary marshalling, supporting:
+[![Language](https://img.shields.io/badge/Languages-Java%20%2B%20C-blue.svg)]()
+[![Protocol](https://img.shields.io/badge/Protocol-UDP-green.svg)]()
+[![Status](https://img.shields.io/badge/Status-Production%20Ready-brightgreen.svg)]()
 
-- Query facility availability
-- Book a facility
-- Change a booking by offset (± minutes)
-- Monitor availability via server→client UDP callbacks
-- Two custom operations:
-  - **Idempotent**: Reset facility schedule for a specific day (repeated calls yield same result)
-  - **Non-idempotent**: Increment facility usage counter (repeated calls change state)
-- Demonstrates at-least-once and at-most-once semantics over UDP
-- **Heterogeneous implementation**: Java server + C client (demonstrates cross-language RPC)
+This project implements a **heterogeneous UDP-based distributed system** for facility booking with manual binary marshalling, featuring:
 
-## Build & Run (Windows)
+- 🏢 **Facility Management**: Query availability and book facilities using weekly recurring schedules
+- 📅 **Weekly Schedule Format**: Human-readable Day/Hour/Minute format instead of timestamps
+- 🔄 **Real-time Updates**: UDP callback system for monitoring facility changes
+- 🌐 **Cross-Language RPC**: Java server communicating with C client via custom binary protocol
+- ⚡ **Network Resilience**: At-least-once and at-most-once semantics with retry mechanisms
+- 🎯 **Custom Operations**: Demonstrates idempotent vs non-idempotent operations
 
-### Java Server
-- Start server:
-  ```
-  scripts\run_server.bat --host 0.0.0.0 --port 9999 --atMostOnce=true --lossSim=0.2
-  ```
+## 📑 Table of Contents
 
-### C Client
-1. Build C client (requires MinGW gcc):
-   ```
-   scripts\build_c_client.bat
-   ```
+- [Quick Start](#-quick-start)
+- [Project Structure](#-project-structure)
+- [Protocol Specification](#protocol-specification)
+- [Weekly Schedule Features](#weekly-schedule-features)
+- [Testing At-least-once vs At-most-once](#testing-at-least-once-vs-at-most-once)
+- [Technical Features](#-technical-features)
+- [Documentation](#-documentation)
 
-2. Run C client commands:
-   - Query: `scripts\run_c_client.bat query --facility LabA --date 2025-10-10`
-   - Book: `scripts\run_c_client.bat book --facility LabA --user bob --start 1728540000000 --end 1728543600000`
-   - Change booking: `scripts\run_c_client.bat change --booking-id 1 --offset 60`
-   - Monitor: `scripts\run_c_client.bat monitor --facility LabA --duration 60 --callback-port 10000`
-   - Reset schedule (idempotent): `scripts\run_c_client.bat reset --facility LabA --day-start 1728518400000 --day-end 1728604800000`
-   - Usage counter (non-idempotent): `scripts\run_c_client.bat custom-incr --facility LabA --atMostOnce 1`
+## Quick Start
 
-**Note**: C client uses manual byte-order conversion with `htons/htonl/ntohs/ntohl` and Winsock2 on Windows.
-
-## Project Structure
-
+### 1. Start Java Server
+```bash
+scripts\run_server.bat
 ```
-/project
-  /common              # Shared protocol definitions (Java)
-    Protocol.java      # Op codes, flags, constants
-    Types.java         # DTOs: Facility, Booking, Interval
-    WireCodec.java     # Manual marshalling with ByteBuffer (big-endian)
-  /server              # Java server
-    FacilityStore.java       # In-memory storage
-    ReservationLogic.java    # Business rules (booking, overlap detection)
-    MonitorRegistry.java     # Callback registration
-    RequestRouter.java       # Request routing, at-most-once cache
-    ServerMain.java          # UDP server main loop
-  /client              # C client
-    protocol.h         # Op codes (mirrors Java)
-    wire_codec.h/c     # Manual marshalling with htons/htonl
-    client_main.c      # UDP client with Winsock2/POSIX
-    Makefile           # Build script
-  /scripts
-    run_server.bat           # Start Java server
-    build_c_client.bat       # Build C client
-    run_c_client.bat         # Run C client
-  README.md
-  HETEROGENEOUS.md     # Detailed cross-language implementation notes
-```
+**Expected output:** `Server listening on 0.0.0.0:9999 atMostOnce=true lossSim=0.0`
 
-## Protocol
-
-Header (16 bytes, big-endian):
-- 0-1: uint16 version (=1)
-- 2-3: uint16 opCode
-- 4-7: uint32 requestId
-- 8-11: uint32 flags (bit0: atMostOnce; bit1: isCallback)
-- 12-15: uint32 payloadLength
-
-Strings: uint16 length + UTF-8 bytes
-Timestamps: int64 epochMillis (8 bytes, big-endian)
-
-Op codes: see `common/Protocol.java` or `client/protocol.h`.
-
-## Notes
-
-- No Java serialization/RMI/CORBA used. Only DatagramSocket/DatagramPacket.
-- Server loop supports simulated loss via `--lossSim`.
-- At-most-once cache TTL ~60s; request IDs are monotonic per client process.
-- Inline comments document line-level logic.
-- All code comments are in English for international collaboration.
-- Dynamic facility creation: facilities are created on first use (no pre-registration needed).
-
-## Demo: At-least-once vs At-most-once
-
-### 1. At-least-once with duplicates (non-idempotent op)
-Start server with response loss simulation (drops ~20% responses):
-```
-scripts\run_server.bat --lossSim=0.2 --atMostOnce=false
-```
-
-Run non-idempotent increment with C client:
-```
-scripts\run_c_client.bat custom-incr --facility LabA --retries 5 --atMostOnce 0
-```
-Repeat the command multiple times. Observe counter may increase by >1 per invocation due to retries.
-
-### 2. At-most-once prevents duplicates
-Stop server and restart with at-most-once cache enabled:
-```
-scripts\run_server.bat --lossSim=0.2 --atMostOnce=true
-```
-
-Run with at-most-once flag:
-```
-scripts\run_c_client.bat custom-incr --facility LabA --retries 5 --atMostOnce 1
-```
-Despite retries, counter increments by exactly 1 per logical invocation (server deduplicates by requestId).
-
-### 3. Basic operations demo
-Start Java server:
-```
-scripts\run_server.bat --lossSim=0.1
-```
-
-Build and run C client:
-```
+### 2. Build C Client (requires MinGW gcc)
+```bash
 scripts\build_c_client.bat
-scripts\run_c_client.bat query --facility LabA --date 2025-10-10
-scripts\run_c_client.bat book --facility LabA --user alice --start 1728540000000 --end 1728543600000
+```
+
+### 3. Run Client Commands
+```bash
+# Query facility availability for a specific day
+scripts\run_c_client.bat query --facility LabA --day Monday
+
+# Book facility using weekly schedule
+scripts\run_c_client.bat book --facility LabA --user alice --day Monday --start-hour 9 --start-minute 0 --end-hour 10 --end-minute 30
+
+# Change existing booking by offset (minutes)
 scripts\run_c_client.bat change --booking-id 1 --offset 60
-scripts\run_c_client.bat monitor --facility LabA --duration 30 --callback-port 10000
-scripts\run_c_client.bat reset --facility LabA --day-start 1728518400000 --day-end 1728604800000
+
+# Monitor facility changes (callbacks)
+scripts\run_c_client.bat monitor --facility LabA --duration 60 --callback-port 10000
+
+# Reset day schedule (idempotent)
+scripts\run_c_client.bat reset --facility LabA --day Monday
+
+# Increment usage counter (non-idempotent)
 scripts\run_c_client.bat custom-incr --facility LabA --atMostOnce 1
 ```
-Observe C client (with manual `htons/htonl` byte-order conversion) successfully communicates with Java server.
 
-## Supported Operations
+## 📁 Project Structure
 
-### Core Operations
-1. **QUERY_AVAIL** - Query facility availability for a specific day
-   - Returns list of available time intervals
-   - Idempotent operation
+```
+SC6103/
+├── 📂 common/                    # Shared protocol definitions (Java)
+│   ├── Protocol.java             # Op codes, flags, constants
+│   ├── Types.java                # Data types: Day enum, WeeklyTime, Booking, Interval  
+│   └── WireCodec.java            # Manual marshalling (ByteBuffer, big-endian)
+├── 📂 server/                    # Java UDP server
+│   ├── ServerMain.java           # Main server loop with DatagramSocket
+│   ├── RequestRouter.java        # Request routing + at-most-once cache
+│   ├── ReservationLogic.java     # Business logic (booking, conflict detection)
+│   ├── FacilityStore.java        # In-memory storage with weekly schedules
+│   └── MonitorRegistry.java      # UDP callback registration
+├── 📂 client/                    # C UDP client  
+│   ├── client_main.c             # Command-line interface with Winsock2
+│   ├── protocol.h                # Op codes + data structures (mirrors Java)
+│   ├── wire_codec.h/.c           # Manual marshalling (htons/htonl)
+│   └── client_udp.exe            # Compiled executable
+├── 📂 scripts/                   # Build and run utilities
+│   ├── run_server.bat            # Start Java server
+│   ├── build_c_client.bat        # Build C client (MinGW)
+│   └── run_c_client.bat          # Execute client commands
+├── 📂 bin/                       # Java compiled classes
+├── 📄 README.md                  # Main documentation (this file)
+├── 📄 HOW_TO_RUN.md              # Step-by-step usage guide
+├── 📄 HETEROGENEOUS.md           # Cross-language implementation details
+├── 📄 CURRENT_STATUS.md          # System status and features
+└── 📄 PROJECT_STRUCTURE.txt      # Technical specifications
+```
 
-2. **BOOK** - Book a facility for a time range
-   - Parameters: facility name, user, start/end timestamps
-   - Returns booking ID
-   - Triggers monitor callbacks if registered
+## Protocol Specification
 
-3. **CHANGE_BOOKING** - Modify booking time by offset
-   - Parameters: booking ID, offset in minutes (can be negative)
-   - Returns new start/end timestamps
-   - Validates no conflicts with other bookings
-   - Triggers monitor callbacks if registered
+### Message Header (16 bytes, big-endian)
+```
+Offset  Size  Field         Type/Encoding
+------  ----  -----         -------------
+0-1     2     version       uint16 (=1)
+2-3     2     opCode        uint16
+4-7     4     requestId     uint32
+8-11    4     flags         uint32 (bit0: atMostOnce; bit1: isCallback)
+12-15   4     payloadLen    uint32
+```
 
-4. **MONITOR** - Register for facility change notifications
-   - Server sends UDP callbacks to client when bookings change
-   - Client listens on specified callback port
-   - Callbacks contain updated availability information
+### Data Types
+- **Strings**: uint16 length + UTF-8 bytes (no null terminator)
+- **WeeklyTime**: uint8 day (0-6) + uint8 hour (0-23) + uint8 minute (0-59) = **3 bytes total**
+- **Day Enum**: Monday=0, Tuesday=1, ..., Sunday=6
 
-### Custom Operations
+### Operation Codes
+- `0x0001` - QUERY_AVAIL (query day availability)
+- `0x0002` - BOOK (book facility)
+- `0x0003` - CHANGE_BOOKING (modify booking)
+- `0x0004` - MONITOR (register callbacks)
+- `0x1001` - CUSTOM_IDEMPOTENT (reset day schedule)
+- `0x1002` - CUSTOM_NON_IDEMPOTENT (increment counter)
+- `0x8000` - Error flag mask
 
-5. **CUSTOM_IDEMPOTENT** - Reset facility schedule (idempotent)
-   - Removes all bookings within specified day range
+## 🔧 Technical Features
+
+- **Pure UDP Implementation**: No Java serialization, RMI, or CORBA - only DatagramSocket/DatagramPacket
+- **Manual Binary Marshalling**: Custom protocol with network byte order (big-endian)
+- **Cross-Platform Networking**: Winsock2 (Windows) + POSIX sockets compatibility
+- **Packet Loss Simulation**: Configurable loss rate for testing network resilience
+- **Request Deduplication**: At-most-once cache with 60s TTL using monotonic request IDs
+- **Dynamic Facility Creation**: Facilities are auto-created on first use
+- **Comprehensive Documentation**: Inline comments in English for international collaboration
+- **Production Ready**: Clean codebase with optimized imports and no unused code
+
+## 📚 Documentation
+
+- **[HOW_TO_RUN.md](HOW_TO_RUN.md)** - Complete step-by-step usage guide
+- **[HETEROGENEOUS.md](HETEROGENEOUS.md)** - Cross-language implementation details
+- **[CURRENT_STATUS.md](CURRENT_STATUS.md)** - System status and feature summary
+- **[PROJECT_STRUCTURE.txt](PROJECT_STRUCTURE.txt)** - Technical specifications
+
+## Weekly Schedule Features
+
+### Time Representation
+- **Recurring Schedule**: Bookings repeat weekly (Monday-Sunday)
+- **Human Readable**: "Monday 09:00" instead of epoch timestamps
+- **Compact Protocol**: 3 bytes per time vs 8 bytes (62% reduction)
+- **Week Boundaries**: 0-10079 minutes (7 days × 24 hours × 60 minutes)
+
+### Supported Operations
+
+#### Core Operations
+1. **QUERY_AVAIL** - Query day availability
+   ```bash
+   scripts\run_c_client.bat query --facility LabA --day Monday
+   ```
+   Returns available time intervals for the specified day
+
+2. **BOOK** - Book facility using weekly schedule
+   ```bash
+   scripts\run_c_client.bat book --facility LabA --user alice --day Monday --start-hour 9 --start-minute 0 --end-hour 10 --end-minute 30
+   ```
+   Books facility and returns booking ID
+
+3. **CHANGE_BOOKING** - Modify booking by offset
+   ```bash
+   scripts\run_c_client.bat change --booking-id 1 --offset 60
+   ```
+   Shifts booking time by specified minutes (can be negative)
+
+4. **MONITOR** - Register for change notifications
+   ```bash
+   scripts\run_c_client.bat monitor --facility LabA --duration 60 --callback-port 10000
+   ```
+   Receives UDP callbacks when facility availability changes
+
+#### Custom Operations
+
+5. **CUSTOM_IDEMPOTENT** - Reset day schedule
+   ```bash
+   scripts\run_c_client.bat reset --facility LabA --day Monday
+   ```
+   - **Idempotent**: Same result regardless of repetition
+   - Removes all bookings for specified day
    - Returns count of removed bookings
-   - **Idempotent**: Repeated calls yield same result (empty schedule)
-   - Use case: Daily/weekly schedule reset
-   - Command: `reset --facility LabA --day-start <ms> --day-end <ms>`
 
-6. **CUSTOM_NON_IDEMPOTENT** - Increment usage counter (non-idempotent)
-   - Increments facility usage counter by 1
-   - Returns new counter value
-   - **Non-idempotent**: Each call increments counter (demonstrates at-least-once issues)
-   - Use case: Track facility access frequency, audit logging
-   - Command: `custom-incr --facility LabA`
+6. **CUSTOM_NON_IDEMPOTENT** - Usage counter
+   ```bash
+   scripts\run_c_client.bat custom-incr --facility LabA --atMostOnce 1
+   ```
+   - **Non-idempotent**: State changes with each call
+   - Increments facility usage counter
+   - Demonstrates at-least-once vs at-most-once semantics
+
+## Testing At-least-once vs At-most-once
+
+### Test Non-idempotent Operation (Usage Counter)
+```bash
+# Run multiple times - counter increments each time
+scripts\run_c_client.bat custom-incr --facility LabA --atMostOnce 0
+# Output: Usage counter for facility=LabA => 1, 2, 3...
+```
+
+### Test With At-most-once Semantics
+```bash
+# Even with retries, increments only once per unique request
+scripts\run_c_client.bat custom-incr --facility LabA --atMostOnce 1 --retries 5
+# Output: Usage counter for facility=LabA => 1 (server deduplicates)
+```

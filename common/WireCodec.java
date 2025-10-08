@@ -10,7 +10,6 @@
 
 import java.nio.*;
 import java.nio.charset.StandardCharsets;
-import java.util.*;
 
 public final class WireCodec {
 
@@ -89,6 +88,21 @@ public final class WireCodec {
         byte[] bytes = new byte[len];                              // allocate
         buf.get(bytes);                                            // read bytes
         return new String(bytes, StandardCharsets.UTF_8);          // decode to String
+    }
+
+    // Write WeeklyTime as: uint8 day + uint8 hour + uint8 minute (3 bytes total)
+    public static void writeWeeklyTime(ByteBuffer buf, Types.WeeklyTime time) {
+        buf.put((byte) time.day.value);                            // day as uint8 (0-6)
+        buf.put((byte) time.hour);                                 // hour as uint8 (0-23)
+        buf.put((byte) time.minute);                               // minute as uint8 (0-59)
+    }
+
+    // Read WeeklyTime from: uint8 day + uint8 hour + uint8 minute (3 bytes total)
+    public static Types.WeeklyTime readWeeklyTime(ByteBuffer buf) {
+        int dayValue = Byte.toUnsignedInt(buf.get());              // read day (0-6)
+        int hour = Byte.toUnsignedInt(buf.get());                  // read hour (0-23)
+        int minute = Byte.toUnsignedInt(buf.get());                // read minute (0-59)
+        return new Types.WeeklyTime(Types.Day.fromValue(dayValue), hour, minute);
     }
 
     // Compute total message buffer: header + payload size

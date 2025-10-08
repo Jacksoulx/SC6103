@@ -6,7 +6,11 @@
  * - Stores facilityName -> Facility and bookingId -> Booking maps.
  */
 
-import java.util.*;
+import java.util.Map;
+import java.util.HashMap;
+import java.util.List;
+import java.util.ArrayList;
+import java.util.Collections;
 
 public class FacilityStore {
     private final Map<String, Types.Facility> facilities = new HashMap<>(); // name->facility map
@@ -56,15 +60,14 @@ public class FacilityStore {
         return new ArrayList<>(f.bookings);                  // copy to avoid external mutation
     }
 
-    // Remove all bookings for a facility within a specific day range [dayStart, dayEnd)
-    public synchronized int removeBookingsInRange(String facilityName, long dayStart, long dayEnd) {
+    // Remove all bookings for a facility on a specific day of the week
+    public synchronized int removeBookingsForDay(String facilityName, Types.Day day) {
         Types.Facility f = facilities.get(facilityName);     // lookup facility
         if (f == null) return 0;                             // no facility, nothing to remove
         
         List<Types.Booking> toRemove = new ArrayList<>();    // collect bookings to remove
         for (Types.Booking b : f.bookings) {                 // iterate facility bookings
-            // Check if booking overlaps with [dayStart, dayEnd)
-            if (b.startEpochMs < dayEnd && b.endEpochMs > dayStart) {
+            if (b.start.day == day) {                         // booking is on specified day
                 toRemove.add(b);                             // mark for removal
             }
         }

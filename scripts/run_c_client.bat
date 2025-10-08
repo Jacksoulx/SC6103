@@ -1,7 +1,7 @@
 @echo off
 rem Run C UDP client
 setlocal
-set SRC=e:\SC6103_project\client
+set SRC=c:\Users\wangx\OneDrive\Desktop\ds\SC6103\client
 pushd %SRC%
 
 rem Check if executable exists

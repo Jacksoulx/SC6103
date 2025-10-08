@@ -40,6 +40,24 @@
 /* Header length in bytes */
 #define HEADER_LEN              16
 
+/* Day enumeration for weekly schedule (matches Java) */
+typedef enum {
+    DAY_MONDAY = 0,
+    DAY_TUESDAY = 1,
+    DAY_WEDNESDAY = 2,
+    DAY_THURSDAY = 3,
+    DAY_FRIDAY = 4,
+    DAY_SATURDAY = 5,
+    DAY_SUNDAY = 6
+} Day;
+
+/* WeeklyTime structure - represents time within a week */
+typedef struct {
+    Day day;           /* day of week (0-6) */
+    uint8_t hour;      /* hour (0-23) */
+    uint8_t minute;    /* minute (0-59) */
+} WeeklyTime;
+
 /*
  * Wire header structure (16 bytes total).
  * IMPORTANT: This struct is NOT directly sent on wire due to padding/alignment.

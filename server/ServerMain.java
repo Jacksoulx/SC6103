@@ -8,7 +8,9 @@
 import java.net.*;
 import java.nio.*;
 import java.time.*;
-import java.util.*;
+import java.util.Random;
+import java.util.Arrays;
+import java.util.List;
 
 public class ServerMain {
     public static void main(String[] args) throws Exception {
@@ -85,29 +87,38 @@ public class ServerMain {
                             facility = logic.getBookingFacility(bookingId);                          // lookup facility from store
                         }
                         if (facility != null) {
-                            // Build availability payload for next hour window starting now
-                            long nowMs = System.currentTimeMillis();
-                            long endMs = nowMs + 60 * 60_000L;                                       // now + 1 hour
-                            List<Types.Interval> ivals = logic.queryDay(facility, nowMs, endMs);     // compute intervals
-                            int count = ivals.size();
-                            int payloadLen = 2 + count * 16;                                         // u16 + N*(i64,i64)
-                            ByteBuffer out = WireCodec.newMessageBuffer(payloadLen);
-                            WireCodec.Header ch = new WireCodec.Header();
-                            ch.version = Protocol.VERSION;
-                            ch.opCode = Protocol.OP_QUERY_AVAIL;                                     // same op for callback body
-                            ch.requestId = 0;                                                        // callbacks need no dedupe by id
-                            ch.flags = Protocol.FLAG_IS_CALLBACK;                                    // mark as callback
-                            ch.payloadLen = payloadLen;
-                            WireCodec.writeHeader(out, ch);
-                            WireCodec.writeU16(out, count);
-                            for (Types.Interval iv : ivals) {
-                                WireCodec.writeI64(out, iv.startEpochMs);
-                                WireCodec.writeI64(out, iv.endEpochMs);
+                            // For weekly schedule, send callback for all days that have bookings
+                            // Find all days with bookings for this facility
+                            java.util.Set<Types.Day> affectedDays = new java.util.HashSet<>();
+                            List<Types.Booking> facilityBookings = logic.getFacilityBookings(facility);
+                            for (Types.Booking booking : facilityBookings) {
+                                affectedDays.add(booking.start.day);
                             }
-                            byte[] cb = out.array();
-                            for (MonitorRegistry.Entry m : monitors.getActiveFor(facility)) {
-                                DatagramPacket mp = new DatagramPacket(cb, cb.length, m.addr, m.port);
-                                if (rnd.nextDouble() >= lossSim) sock.send(mp);                      // send callback unless dropped
+                            
+                            // Send callback for each affected day
+                            for (Types.Day day : affectedDays) {
+                                List<Types.Interval> ivals = logic.queryDay(facility, day);     // compute intervals for this day
+                                int count = ivals.size();
+                                int payloadLen = 2 + 1 + count * 6;                             // u16 + day + N*(WeeklyTime,WeeklyTime)
+                                ByteBuffer out = WireCodec.newMessageBuffer(payloadLen);
+                                WireCodec.Header ch = new WireCodec.Header();
+                                ch.version = Protocol.VERSION;
+                                ch.opCode = Protocol.OP_QUERY_AVAIL;                             // same op for callback body
+                                ch.requestId = 0;                                                // callbacks need no dedupe by id
+                                ch.flags = Protocol.FLAG_IS_CALLBACK;                            // mark as callback
+                                ch.payloadLen = payloadLen;
+                                WireCodec.writeHeader(out, ch);
+                                WireCodec.writeU16(out, count);
+                                out.put((byte) day.value);                                       // write day
+                                for (Types.Interval iv : ivals) {
+                                    WireCodec.writeWeeklyTime(out, iv.start);
+                                    WireCodec.writeWeeklyTime(out, iv.end);
+                                }
+                                byte[] cb = out.array();
+                                for (MonitorRegistry.Entry m : monitors.getActiveFor(facility)) {
+                                    DatagramPacket mp = new DatagramPacket(cb, cb.length, m.addr, m.port);
+                                    if (rnd.nextDouble() >= lossSim) sock.send(mp);                  // send callback unless dropped
+                                }
                             }
                         }
                     } catch (Exception ignore) { /* ignore callback errors to not impact main flow */ }
