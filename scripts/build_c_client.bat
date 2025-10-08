@@ -2,8 +2,11 @@
 rem Build C client using MinGW gcc on Windows
 rem Requires MinGW or similar toolchain in PATH
 setlocal
-set SRC=c:\Users\wangx\OneDrive\Desktop\ds\SC6103\client
-pushd %SRC%
+
+rem Get the script directory and navigate to client directory
+set SCRIPT_DIR=%~dp0
+set CLIENT_DIR=%SCRIPT_DIR%..\client
+pushd "%CLIENT_DIR%"
 
 rem Try to find gcc in common locations
 set GCC_PATH=

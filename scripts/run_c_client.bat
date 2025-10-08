@@ -1,8 +1,11 @@
 @echo off
 rem Run C UDP client
 setlocal
-set SRC=c:\Users\wangx\OneDrive\Desktop\ds\SC6103\client
-pushd %SRC%
+
+rem Get the script directory and navigate to client directory
+set SCRIPT_DIR=%~dp0
+set CLIENT_DIR=%SCRIPT_DIR%..\client
+pushd "%CLIENT_DIR%"
 
 rem Check if executable exists
 if not exist client_udp.exe (

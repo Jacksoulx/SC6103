@@ -1,13 +1,36 @@
 @echo off
-rem Simple test script for the weekly schedule system
+rem Comprehensive test script for the weekly schedule system
+setlocal
+
+rem Get the script directory and navigate to project root
+set SCRIPT_DIR=%~dp0
+set PROJECT_ROOT=%SCRIPT_DIR%..
+pushd "%PROJECT_ROOT%"
+
 echo ================================
-echo Weekly Schedule System Test
+echo  Weekly Schedule System Test
 echo ================================
 echo.
 
+echo Step 0: Building system...
+echo - Compiling Java server...
+call scripts\run_server.bat --help > nul 2>&1
+if errorlevel 1 (
+    echo Java compilation failed!
+    goto :cleanup
+)
+
+echo - Building C client...
+call scripts\build_c_client.bat
+if errorlevel 1 (
+    echo C client build failed!
+    goto :cleanup
+)
+
+echo.
 echo Step 1: Starting server...
-start "Server" cmd /k "java -cp bin ServerMain --port 9999"
-timeout /t 3 /nobreak > nul
+start "Weekly_Schedule_Server" cmd /k "scripts\run_server.bat --port 9999"
+timeout /t 5 /nobreak > nul
 echo.
 
 echo Step 2: Testing query availability...
@@ -41,6 +64,13 @@ scripts\run_c_client.bat custom-incr --facility LabA --atMostOnce 1
 echo.
 
 echo ================================
-echo Test Complete!
+echo  Test Complete!
 echo ================================
+echo.
+echo NOTE: Server is still running in separate window.
+echo       Close the server window when done testing.
+
+:cleanup
+popd
+endlocal
 pause

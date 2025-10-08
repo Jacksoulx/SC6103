@@ -77,9 +77,14 @@ SC6103/
 │   ├── wire_codec.h/.c           # Manual marshalling (htons/htonl)
 │   └── client_udp.exe            # Compiled executable
 ├── 📂 scripts/                   # Build and run utilities
-│   ├── run_server.bat            # Start Java server
-│   ├── build_c_client.bat        # Build C client (MinGW)
-│   └── run_c_client.bat          # Execute client commands
+│   ├── help.bat                  # Interactive help system
+│   ├── build_c_client.bat        # Build C client (MinGW auto-detect)
+│   ├── run_server.bat            # Compile and run Java server
+│   ├── run_c_client.bat          # Execute client commands
+│   ├── debug_server.bat          # Server with debug output
+│   ├── test_weekly_schedule.bat  # Comprehensive system tests
+│   ├── clean.bat                 # Clean build files
+│   └── README.md                 # Scripts documentation
 ├── 📂 bin/                       # Java compiled classes
 ├── 📄 README.md                  # Main documentation (this file)
 ├── 📄 HOW_TO_RUN.md              # Step-by-step usage guide
