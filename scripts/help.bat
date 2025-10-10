@@ -31,6 +31,10 @@ echo             scripts\run_c_client.bat reset --facility LabA --day Monday
 echo             scripts\run_c_client.bat custom-incr --facility LabA --atMostOnce 1
 echo             scripts\run_c_client.bat monitor --facility LabA --duration 60 --callback-port 10000
 echo.
+echo    Remote Server Examples:
+echo             scripts\run_c_client.bat query --host 192.168.1.100 --port 9999 --facility LabA --day Monday
+echo             scripts\run_c_client.bat book --host 192.168.1.100 --facility LabA --user alice --day Monday --start-hour 9 --start-minute 0 --end-hour 10 --end-minute 30
+echo.
 
 echo 4. debug_server.bat
 echo    Purpose: Run server with debug output and error catching

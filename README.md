@@ -10,6 +10,7 @@ This project implements a **heterogeneous UDP-based distributed system** for fac
 - 📅 **Weekly Schedule Format**: Human-readable Day/Hour/Minute format instead of timestamps
 - 🔄 **Real-time Updates**: UDP callback system for monitoring facility changes
 - 🌐 **Cross-Language RPC**: Java server communicating with C client via custom binary protocol
+- 🌍 **Distributed Deployment**: Client and server can run on different machines across networks
 - ⚡ **Network Resilience**: At-least-once and at-most-once semantics with retry mechanisms
 - 🎯 **Custom Operations**: Demonstrates idempotent vs non-idempotent operations
 
@@ -55,6 +56,9 @@ scripts\run_c_client.bat reset --facility LabA --day Monday
 
 # Increment usage counter (non-idempotent)
 scripts\run_c_client.bat custom-incr --facility LabA --atMostOnce 1
+
+# Remote client example (different PC)
+scripts\run_c_client.bat query --host 192.168.1.100 --port 9999 --facility LabA --day Monday
 ```
 
 ## 📁 Project Structure
@@ -88,6 +92,7 @@ SC6103/
 ├── 📂 bin/                       # Java compiled classes
 ├── 📄 README.md                  # Main documentation (this file)
 ├── 📄 HOW_TO_RUN.md              # Step-by-step usage guide
+├── 📄 REMOTE_CLIENT_SETUP.md     # Running client on different PCs
 ├── 📄 HETEROGENEOUS.md           # Cross-language implementation details
 ├── 📄 CURRENT_STATUS.md          # System status and features
 └── 📄 PROJECT_STRUCTURE.txt      # Technical specifications
@@ -134,6 +139,7 @@ Offset  Size  Field         Type/Encoding
 ## 📚 Documentation
 
 - **[HOW_TO_RUN.md](HOW_TO_RUN.md)** - Complete step-by-step usage guide
+- **[REMOTE_CLIENT_SETUP.md](REMOTE_CLIENT_SETUP.md)** - Running client on different PCs
 - **[HETEROGENEOUS.md](HETEROGENEOUS.md)** - Cross-language implementation details
 - **[CURRENT_STATUS.md](CURRENT_STATUS.md)** - System status and feature summary
 - **[PROJECT_STRUCTURE.txt](PROJECT_STRUCTURE.txt)** - Technical specifications
