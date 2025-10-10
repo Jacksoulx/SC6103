@@ -11,13 +11,14 @@ The system is designed to work across different machines in a network. Here's ho
 # Start server to listen on all interfaces (default)
 scripts\run_server.bat --host 0.0.0.0 --port 9999
 
-# Alternative: Bind to specific IP
+# Alternative: Bind to specific IP 
+# Remember to change this 192.168.1.100 to actual ip
 scripts\run_server.bat --host 192.168.1.100 --port 9999
 ```
 
 ### 2. Check Server IP Address
 ```powershell
-# Find your server's IP address
+# Find your server's IP address change 192.168.1.100 to this 
 ipconfig | findstr IPv4
 ```
 

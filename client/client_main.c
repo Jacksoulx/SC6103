@@ -8,12 +8,14 @@
  * - Manual marshalling with wire_codec functions ensures correct byte order.
  */
 
+#define _WIN32_WINNT 0x0600 /* enable inet_pton on Windows */
 #include "protocol.h"
 #include "wire_codec.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#include <inttypes.h> /* PRId64 formatting */
 
 #ifdef _WIN32
     #define strcasecmp _stricmp
@@ -235,8 +237,9 @@ void cmd_book(SOCKET sock, struct sockaddr_in *server_addr, const char *facility
     snprintf(end_str, sizeof(end_str), "%s %02u:%02u", 
             day_to_string(end->day), end->hour, end->minute);
     
-    printf("Booking created: id=%lld for %s from %s to %s\n", 
-           (long long)booking_id, facility, start_str, end_str); /* print result */
+    /* Use PRId64 for portable int64 printing */
+    printf("Booking created: id=%" PRId64 " for %s from %s to %s\n", 
+        (int64_t)booking_id, facility, start_str, end_str); /* print result */
 }
 
 /*
@@ -277,7 +280,7 @@ void cmd_custom_incr(SOCKET sock, struct sockaddr_in *server_addr, const char *f
     }
     int64_t usage_count;                                 /* usage counter value */
     read_i64(resp_buf + HEADER_LEN, &usage_count);       /* read usage count */
-    printf("Usage counter for facility=%s => %lld\n", facility, (long long)usage_count); /* print result */
+    printf("Usage counter for facility=%s => %" PRId64 "\n", facility, (int64_t)usage_count); /* print result */
 }
 
 /*
